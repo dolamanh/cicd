@@ -111,8 +111,8 @@ jobs:
             "https://deploygate.com/api/users/${DEPLOYGATE_USER}/apps")
           
           echo "Kết quả API: $RESPONSE"
-          # Kiểm tra kết quả từ API
-          if [[ "$RESPONSE" == *"error"* ]]; then
+          # Kiểm tra kết quả từ API chi tiết hơn, chỉ coi là lỗi khi có "error":true
+          if [[ "$RESPONSE" == *"\"error\":true"* ]]; then
             echo "Lỗi khi đẩy lên DeployGate: $RESPONSE"
             exit 1
           else
