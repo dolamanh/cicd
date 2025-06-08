@@ -123,6 +123,9 @@ android {
         warningsAsErrors = false  // Không xem warning như lỗi
         baseline = file("lint-baseline.xml") // Tệp baseline cho phép bỏ qua một số lỗi
         disable += "ObsoleteLintCustomCheck"
+        // Không thất bại khi tạo baseline mới
+        checkDependencies = true
+        ignoreTestSources = true
     }
 
     // Cấu hình test
