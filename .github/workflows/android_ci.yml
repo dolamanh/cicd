@@ -1,72 +1,94 @@
+# Tên của workflow sẽ hiển thị trong tab Actions của GitHub
 name: Android CI/CD Pipeline
 
+# Định nghĩa các sự kiện kích hoạt workflow
 on:
+  # Kích hoạt khi có commit được push lên các nhánh chính
   push:
     branches: [ main, master ]
+  # Kích hoạt khi có pull request vào các nhánh chính
   pull_request:
     branches: [ main, master ]
-  # Lập lịch để chạy hàng đêm vào lúc 2 giờ sáng UTC
+  # Lập lịch để chạy hàng đêm vào lúc 2 giờ sáng UTC (có thể dùng cho nightly build)
   schedule:
     - cron: '0 2 * * *'
-  # Cho phép chạy thủ công từ giao diện GitHub
+  # Cho phép kích hoạt thủ công từ giao diện GitHub Actions
   workflow_dispatch:
 
+# Định nghĩa các công việc (jobs) cần thực hiện
 jobs:
+  # Job đầu tiên: Build và test ứng dụng
   build:
     name: Build và Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest    # Chạy trên máy ảo Ubuntu phiên bản mới nhất
 
     steps:
+      # Checkout code từ repository với lịch sử đầy đủ (fetch-depth: 0)
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0      # Lấy toàn bộ lịch sử commit, cần thiết cho việc tạo tag
 
+      # Cài đặt Java Development Kit phiên bản 17
       - name: Thiết lập JDK 17
         uses: actions/setup-java@v3
         with:
-          distribution: 'zulu'
-          java-version: '17'
-          cache: gradle
+          distribution: 'zulu'    # Sử dụng bản phân phối Azul Zulu JDK
+          java-version: '17'      # Phiên bản Java
+          cache: gradle           # Bật cache cho Gradle để tăng tốc độ build
 
+      # Cấp quyền thực thi cho file gradlew
       - name: Cấp quyền thực thi cho Gradlew
         run: chmod +x ./gradlew
 
+      # Cấu hình cache cho Gradle để tăng hiệu suất các lần build tiếp theo
       - name: Cache Gradle
         uses: actions/cache@v3
         with:
+          # Các đường dẫn cần cache
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
+          # Khóa cache dựa trên OS, hash từ file gradle, wrapper properties và versions
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          # Khóa phụ để khôi phục cache nếu không tìm thấy khóa chính
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      # Chạy kiểm tra lint để phát hiện vấn đề về code
       - name: Kiểm tra với Lint
+        # Thêm cờ lint.baselines.continue=true để tiếp tục build khi tạo baseline mới
         run: ./gradlew lint -Dlint.baselines.continue=true
 
+      # Chạy unit tests để kiểm tra logic ứng dụng
       - name: Chạy Unit Tests
         run: ./gradlew test
 
+      # Build phiên bản debug cho môi trường dev
       - name: Build Debug APK
         run: ./gradlew assembleDevDebug
 
+      # Lưu APK debug như một artifact để có thể tải xuống từ GitHub Actions
       - name: Upload APK Debug
         uses: actions/upload-artifact@v4
         with:
-          name: app-dev-debug
-          path: app/build/outputs/apk/dev/debug/app-dev-debug.apk
+          name: app-dev-debug     # Tên của artifact
+          path: app/build/outputs/apk/dev/debug/app-dev-debug.apk  # Đường dẫn file
 
+  # Job thứ hai: Tạo phiên bản release chính thức
   release:
     name: Tạo Release
-    needs: build
+    needs: build    # Đợi job build hoàn thành thành công
+    # Chỉ chạy khi push vào nhánh chính (không chạy cho pull requests)
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
 
     steps:
+      # Checkout code với lịch sử đầy đủ
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # Cài đặt Java 17
       - name: Thiết lập JDK 17
         uses: actions/setup-java@v3
         with:
@@ -74,51 +96,68 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      # Cấp quyền thực thi cho gradlew
       - name: Cấp quyền thực thi cho Gradlew
         run: chmod +x ./gradlew
 
+      # Thiết lập keystore để ký ứng dụng từ biến môi trường bí mật
       - name: Thiết lập Keystore
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_KEY_ALIAS: ${{ secrets.KEYSTORE_KEY_ALIAS }}
-          KEYSTORE_KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD }}
-          KEYSTORE_STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
+          # Sử dụng các biến bí mật đã được cấu hình trong GitHub repository
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}             # File keystore được mã hóa base64
+          KEYSTORE_KEY_ALIAS: ${{ secrets.KEYSTORE_KEY_ALIAS }}        # Alias của key trong keystore
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD }}  # Mật khẩu của key
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }} # Mật khẩu của keystore
+        # Giải mã base64 thành file keystore
         run: echo "$KEYSTORE_BASE64" | base64 -d > app/release.keystore
 
+      # Build các phiên bản release cho production
       - name: Build Release APK và Bundle
         env:
+          # Truyền thông tin keystore qua biến môi trường cho Gradle
           KEYSTORE_KEY_ALIAS: ${{ secrets.KEYSTORE_KEY_ALIAS }}
           KEYSTORE_KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD }}
           KEYSTORE_STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          ./gradlew assembleProdRelease
-          ./gradlew bundleProdRelease
+          ./gradlew assembleProdRelease    # Tạo file APK đã ký
+          ./gradlew bundleProdRelease      # Tạo file AAB cho Google Play Store
 
+      # Đọc thông tin phiên bản từ file build.gradle.kts
       - name: Đọc version từ build.gradle
         id: gradle_version
         run: |
+          # Trích xuất versionCode từ file build.gradle.kts
           VERSION_CODE=$(grep -o 'versionCode\s*=\s*[0-9]*' app/build.gradle.kts | grep -o '[0-9]*')
+          # Trích xuất versionName từ file build.gradle.kts
           VERSION_NAME=$(grep -o 'versionName\s*=\s*"[^"]*"' app/build.gradle.kts | grep -o '"[^"]*"' | sed 's/"//g')
+          # Lưu vào biến môi trường để sử dụng trong các bước sau
           echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
           echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
+          # Lưu vào output để có thể tham chiếu qua steps.<id>.outputs
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
 
+      # Tạo tag git cho phiên bản mới
       - name: Tạo Release Tag
         id: create_tag
         run: |
+          # Tạo tên tag từ version name và code
           TAG_NAME="v${{ env.VERSION_NAME }}-${{ env.VERSION_CODE }}"
+          # Tạo tag local
           git tag $TAG_NAME
+          # Push tag lên repository
           git push origin $TAG_NAME
+          # Lưu tên tag vào output
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
 
+      # Tạo GitHub Release chính thức với các file đính kèm
       - name: Tạo Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v1     # Action tạo GitHub Release
         with:
-          tag_name: ${{ steps.create_tag.outputs.tag_name }}
-          name: Release ${{ env.VERSION_NAME }} (Build ${{ env.VERSION_CODE }})
-          body: |
+          tag_name: ${{ steps.create_tag.outputs.tag_name }}  # Sử dụng tag đã tạo ở bước trước
+          name: Release ${{ env.VERSION_NAME }} (Build ${{ env.VERSION_CODE }})  # Tiêu đề release
+          body: |                              # Nội dung mô tả release
             ## Phiên bản mới ${{ env.VERSION_NAME }} (Build ${{ env.VERSION_CODE }})
             
             ### Thay đổi trong phiên bản này:
@@ -129,24 +168,25 @@ jobs:
             - Bundle: app-prod-release.aab
             
             *Được tạo tự động bởi CI/CD Pipeline.*
-          draft: false
-          prerelease: false
-          files: |
+          draft: false                        # Không phải bản nháp
+          prerelease: false                   # Không phải pre-release
+          files: |                            # Các file đính kèm với release
             app/build/outputs/apk/prod/release/app-prod-release.apk
             app/build/outputs/bundle/prodRelease/app-prod-release.aab
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Token để có quyền tạo release
 
+  # Job thứ ba: Phân phối ứng dụng cho testers
   deploy:
     name: Deploy lên Firebase App Distribution
-    needs: release
+    needs: release                # Đợi job release hoàn thành thành công
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4  # Checkout code
 
-      - name: Thiết lập JDK 17
+      - name: Thiết lập JDK 17     # Cài đặt Java 17
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
@@ -156,17 +196,17 @@ jobs:
       - name: Cấp quyền thực thi cho Gradlew
         run: chmod +x ./gradlew
 
-      - name: Thiết lập Firebase CLI
+      - name: Thiết lập Firebase CLI  # Cài đặt công cụ Firebase CLI
         run: npm install -g firebase-tools
 
-      - name: Build APK QA để phân phối
+      - name: Build APK QA để phân phối  # Build phiên bản QA cho kiểm thử
         run: ./gradlew assembleQaDebug
 
       - name: Phân phối cho testers qua Firebase App Distribution
         env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}  # Token xác thực Firebase
         run: |
           firebase appdistribution:distribute app/build/outputs/apk/qa/debug/app-qa-debug.apk \
-            --app ${{ secrets.FIREBASE_APP_ID }} \
-            --groups "testers" \
-            --release-notes "Build tự động từ CI/CD. Phiên bản QA để kiểm tra."
+            --app ${{ secrets.FIREBASE_APP_ID }} \     # ID ứng dụng trên Firebase
+            --groups "testers" \                       # Nhóm người dùng nhận được bản build
+            --release-notes "Build tự động từ CI/CD. Phiên bản QA để kiểm tra."  # Ghi chú
