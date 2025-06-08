@@ -74,6 +74,25 @@ jobs:
           name: app-dev-debug     # Tên của artifact
           path: app/build/outputs/apk/dev/debug/app-dev-debug.apk  # Đường dẫn file
 
+      # Deploy APK Debug lên DeployGate ngay sau khi build
+      - name: Deploy APK Debug lên DeployGate
+        if: success() # Chỉ chạy nếu các bước trước thành công
+        run: |
+          # Cài đặt công cụ DeployGate CLI
+          wget -q -O deploygate https://github.com/deploygate/deploygate-cli/releases/latest/download/deploygate_linux_amd64
+          chmod +x deploygate
+          
+          # Đọc thông tin phiên bản từ build.gradle.kts
+          VERSION_CODE=$(grep -o 'versionCode\s*=\s*[0-9]*' app/build.gradle.kts | grep -o '[0-9]*')
+          VERSION_NAME=$(grep -o 'versionName\s*=\s*"[^"]*"' app/build.gradle.kts | grep -o '"[^"]*"' | sed 's/"//g')
+          
+          # Đăng nhập và đẩy APK Debug lên DeployGate
+          ./deploygate login --api-key=${{ secrets.DEPLOYGATE_API_KEY }}
+          ./deploygate deploy app/build/outputs/apk/dev/debug/app-dev-debug.apk \
+            --message "Development Debug build v${VERSION_NAME} (code ${VERSION_CODE}) - $(date)" \
+            --visibility private \
+            --distribution-name "Development Testers"
+
   # Job thứ hai: Tạo phiên bản release chính thức
   release:
     name: Tạo Release
@@ -176,6 +195,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Token để có quyền tạo release
 
+      # Upload APK Prod-Release như một artifact để job deploy có thể tải xuống
+      - name: Upload APK Prod Release
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-prod-release     # Tên của artifact
+          path: app/build/outputs/apk/prod/release/app-prod-release.apk  # Đường dẫn file
+
   # Job thứ ba: Phân phối ứng dụng cho testers
   deploy:
     name: Deploy lên Firebase App Distribution
@@ -201,6 +227,32 @@ jobs:
 
       - name: Build APK QA để phân phối  # Build phiên bản QA cho kiểm thử
         run: ./gradlew assembleQaDebug
+
+      # Tải artifact APK Release từ job trước
+      - name: Tải APK Release
+        uses: actions/download-artifact@v4
+        with:
+          name: app-prod-release
+          path: ./app/build/outputs/apk/prod/release/
+
+      # Deploy lên DeployGate
+      - name: Deploy lên DeployGate
+        run: |
+          # Cài đặt công cụ DeployGate CLI
+          wget -q -O deploygate https://github.com/deploygate/deploygate-cli/releases/latest/download/deploygate_linux_amd64
+          chmod +x deploygate
+          
+          # Đẩy APK Release lên DeployGate
+          ./deploygate login --api-key=${{ secrets.DEPLOYGATE_API_KEY }}
+          ./deploygate deploy app/build/outputs/apk/prod/release/app-prod-release.apk \
+            --message "Release build v${{ env.VERSION_NAME }} (code ${{ env.VERSION_CODE }})" \
+            --visibility private
+            
+          # Đẩy APK QA Debug lên DeployGate
+          ./deploygate deploy app/build/outputs/apk/qa/debug/app-qa-debug.apk \
+            --message "QA Debug build v${{ env.VERSION_NAME }} (code ${{ env.VERSION_CODE }})" \
+            --visibility private \
+            --distribution-name "QA Testers"
 
       - name: Phân phối cho testers qua Firebase App Distribution
         env:

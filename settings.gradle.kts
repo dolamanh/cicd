@@ -9,6 +9,8 @@ pluginManagement {
         }
         mavenCentral()
         gradlePluginPortal()
+        maven { url = uri("https://plugins.gradle.org/m2/") } // Thêm repo plugins.gradle.org
+        maven { url = uri("https://maven.deploygate.com/") } // Thêm repo DeployGate
     }
 }
 dependencyResolutionManagement {
@@ -21,4 +23,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "cicd"
 include(":app")
- 
+

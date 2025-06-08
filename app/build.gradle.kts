@@ -152,6 +152,9 @@ dependencies {
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-crashlytics")
 
+    // DeployGate SDK - Thêm hỗ trợ cho DeployGate trong ứng dụng
+    implementation("com.deploygate:sdk:4.5.0")
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
