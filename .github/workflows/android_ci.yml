@@ -3,12 +3,12 @@ name: Android CI/CD Pipeline
 
 # Định nghĩa các sự kiện kích hoạt workflow
 on:
-  # Kích hoạt khi có commit được push lên các nhánh chính
+  # Kích hoạt khi có commit được push lên các nhánh
   push:
-    branches: [ main, master ]
-  # Kích hoạt khi có pull request vào các nhánh chính
+    branches: [ main, master, dev, qa, prod ]
+  # Kích hoạt khi có pull request vào các nhánh
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, master, dev, qa, prod ]
   # Lập lịch để chạy hàng đêm vào lúc 2 giờ sáng UTC (có thể dùng cho nightly build)
   schedule:
     - cron: '0 2 * * *'
@@ -27,6 +27,28 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0      # Lấy toàn bộ lịch sử commit, cần thiết cho việc tạo tag
+
+      # Xác định nhánh hiện tại để build đúng flavor
+      - name: Xác định nhánh và cấu hình build
+        id: branch_config
+        run: |
+          # Lấy tên nhánh hiện tại
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          echo "Nhánh hiện tại: $BRANCH_NAME"
+          
+          # Mặc định sử dụng dev nếu không phải một trong các nhánh chính
+          BUILD_FLAVOR="dev"
+          
+          # Chọn build flavor dựa trên nhánh
+          if [[ "$BRANCH_NAME" == "prod" || "$BRANCH_NAME" == "master" || "$BRANCH_NAME" == "main" ]]; then
+            BUILD_FLAVOR="prod"
+          elif [[ "$BRANCH_NAME" == "qa" ]]; then
+            BUILD_FLAVOR="qa"
+          fi
+          
+          echo "BUILD_FLAVOR=$BUILD_FLAVOR" >> $GITHUB_ENV
+          echo "build_flavor=$BUILD_FLAVOR" >> $GITHUB_OUTPUT
+          echo "Flavor được chọn để build: $BUILD_FLAVOR"
 
       # Cài đặt Java Development Kit phiên bản 17
       - name: Thiết lập JDK 17
@@ -63,16 +85,16 @@ jobs:
       - name: Chạy Unit Tests
         run: ./gradlew test
 
-      # Build phiên bản debug cho môi trường dev
-      - name: Build Debug APK
-        run: ./gradlew assembleDevDebug
+      # Build APK dựa trên nhánh hiện tại
+      - name: Build APK theo nhánh
+        run: ./gradlew assemble${{ env.BUILD_FLAVOR }}Debug
 
       # Lưu APK debug như một artifact để có thể tải xuống từ GitHub Actions
       - name: Upload APK Debug
         uses: actions/upload-artifact@v4
         with:
-          name: app-dev-debug     # Tên của artifact
-          path: app/build/outputs/apk/dev/debug/app-dev-debug.apk  # Đường dẫn file
+          name: app-${{ env.BUILD_FLAVOR }}-debug     # Tên của artifact bao gồm tên flavor
+          path: app/build/outputs/apk/${{ env.BUILD_FLAVOR }}/debug/app-${{ env.BUILD_FLAVOR }}-debug.apk  # Đường dẫn file
 
       # Deploy APK Debug lên DeployGate ngay sau khi build sử dụng API REST
       - name: Deploy APK Debug lên DeployGate
@@ -82,7 +104,7 @@ jobs:
           DEPLOYGATE_API_KEY: ${{ secrets.DEPLOYGATE_API_KEY }}
         run: |
           # Kiểm tra file APK tồn tại
-          if [ ! -f app/build/outputs/apk/dev/debug/app-dev-debug.apk ]; then
+          if [ ! -f app/build/outputs/apk/${{ env.BUILD_FLAVOR }}/debug/app-${{ env.BUILD_FLAVOR }}-debug.apk ]; then
             echo "APK file không tồn tại tại đường dẫn đã chỉ định!"
             find app/build -name "*.apk" | sort
             exit 1
@@ -105,7 +127,7 @@ jobs:
           # Sử dụng tham số đúng cho việc xác thực (không đặt api_key trong form data)
           RESPONSE=$(curl -v -# \
             -H "Authorization: Token ${DEPLOYGATE_API_KEY}" \
-            -F "file=@app/build/outputs/apk/dev/debug/app-dev-debug.apk" \
+            -F "file=@app/build/outputs/apk/${{ env.BUILD_FLAVOR }}/debug/app-${{ env.BUILD_FLAVOR }}-debug.apk" \
             -F "message=Debug build v${VERSION_NAME} (${VERSION_CODE})" \
             -F "visibility=private" \
             "https://deploygate.com/api/users/${DEPLOYGATE_USER}/apps")

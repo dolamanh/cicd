@@ -84,15 +84,27 @@ android {
             dimension = "environment"
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
+            // Thiết lập tên ứng dụng cho môi trường dev
+            manifestPlaceholders["appName"] = "CICD Dev"
+            // Ghi đè giá trị resource strings
+            resValue("string", "app_name", "CICD Dev")
         }
         create("qa") {
             dimension = "environment"
             applicationIdSuffix = ".qa"
             versionNameSuffix = "-qa"
+            // Thiết lập tên ứng dụng cho môi trường qa
+            manifestPlaceholders["appName"] = "CICD QA"
+            // Ghi đè giá trị resource strings
+            resValue("string", "app_name", "CICD QA")
         }
         create("prod") {
             dimension = "environment"
             // Không có hậu tố cho phiên bản production
+            // Thiết lập tên ứng dụng cho môi trường prod
+            manifestPlaceholders["appName"] = "CICD"
+            // Ghi đè giá trị resource strings
+            resValue("string", "app_name", "CICD")
         }
     }
 
