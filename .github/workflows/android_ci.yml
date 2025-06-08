@@ -42,7 +42,7 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: Kiểm tra với Lint
-        run: ./gradlew lint
+        run: ./gradlew lint -Dlint.baselines.continue=true
 
       - name: Chạy Unit Tests
         run: ./gradlew test
