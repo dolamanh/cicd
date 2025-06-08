@@ -74,21 +74,17 @@ jobs:
           name: app-dev-debug     # Tên của artifact
           path: app/build/outputs/apk/dev/debug/app-dev-debug.apk  # Đường dẫn file
 
-      # Deploy APK Debug lên DeployGate ngay sau khi build
+      # Deploy APK Debug lên DeployGate ngay sau khi build sử dụng API REST
       - name: Deploy APK Debug lên DeployGate
         if: success() # Chỉ chạy nếu các bước trước thành công
         run: |
           # Kiểm tra file APK tồn tại
           if [ ! -f app/build/outputs/apk/dev/debug/app-dev-debug.apk ]; then
             echo "APK file không tồn tại tại đường dẫn đã chỉ định!"
-            ls -la app/build/outputs/apk/dev/debug/ || echo "Thư mục không tồn tại"
+            ls -la app/build/outputs/apk/ || echo "Thư mục outputs/apk không tồn tại"
+            ls -la app/build/outputs/ || echo "Thư mục outputs không tồn tại"
             exit 1
           fi
-          
-          # Sử dụng curl thay vì wget để tải DeployGate CLI
-          echo "Đang tải DeployGate CLI..."
-          curl -sL -o deploygate "https://github.com/deploygate/deploygate-cli/releases/download/v1.2.0/deploygate_linux_amd64"
-          chmod +x deploygate
           
           # Đọc thông tin phiên bản từ build.gradle.kts
           echo "Đang đọc thông tin phiên bản..."
@@ -96,15 +92,22 @@ jobs:
           VERSION_NAME=$(grep -o 'versionName\s*=\s*"[^"]*"' app/build.gradle.kts | grep -o '"[^"]*"' | sed 's/"//g')
           echo "Version: ${VERSION_NAME} (${VERSION_CODE})"
           
-          # Đăng nhập và đẩy APK Debug lên DeployGate
-          echo "Đăng nhập vào DeployGate..."
-          ./deploygate login --api-key=${{ secrets.DEPLOYGATE_API_KEY }}
+          # Upload APK sử dụng API REST của DeployGate
+          echo "Đẩy APK lên DeployGate qua API REST..."
+          RESPONSE=$(curl -# -F "file=@app/build/outputs/apk/dev/debug/app-dev-debug.apk" \
+            -F "token=${{ secrets.DEPLOYGATE_API_KEY }}" \
+            -F "message=Debug build v${VERSION_NAME} (${VERSION_CODE})" \
+            -F "visibility=private" \
+            https://deploygate.com/api/users/me/apps)
           
-          echo "Đẩy APK lên DeployGate..."
-          ./deploygate deploy app/build/outputs/apk/dev/debug/app-dev-debug.apk \
-            --message "Debug build v${VERSION_NAME} (${VERSION_CODE})" \
-            --visibility private
-        shell: bash
+          echo "Kết quả API: $RESPONSE"
+          # Kiểm tra kết quả từ API
+          if [[ "$RESPONSE" == *"error"* ]]; then
+            echo "Lỗi khi đẩy lên DeployGate: $RESPONSE"
+            exit 1
+          else
+            echo "Đã đẩy APK lên DeployGate thành công!"
+          fi
 
   # Job thứ hai: Tạo phiên bản release chính thức
   release:
