@@ -77,6 +77,9 @@ jobs:
       # Deploy APK Debug lên DeployGate ngay sau khi build sử dụng API REST
       - name: Deploy APK Debug lên DeployGate
         if: success() # Chỉ chạy nếu các bước trước thành công
+        env:
+          DEPLOYGATE_USER: ${{ secrets.DEPLOYGATE_USER }}
+          DEPLOYGATE_API_KEY: ${{ secrets.DEPLOYGATE_API_KEY }}
         run: |
           # Kiểm tra file APK tồn tại
           if [ ! -f app/build/outputs/apk/dev/debug/app-dev-debug.apk ]; then
@@ -92,13 +95,15 @@ jobs:
           VERSION_NAME=$(grep -o 'versionName\s*=\s*"[^"]*"' app/build.gradle.kts | grep -o '"[^"]*"' | sed 's/"//g')
           echo "Version: ${VERSION_NAME} (${VERSION_CODE})"
           
-          # Upload APK sử dụng API REST của DeployGate
+          # Upload APK sử dụng API REST của DeployGate với cấu hình đúng
           echo "Đẩy APK lên DeployGate qua API REST..."
+          
+          # Sử dụng username trong URL API và api_key trong tham số
           RESPONSE=$(curl -# -F "file=@app/build/outputs/apk/dev/debug/app-dev-debug.apk" \
-            -F "token=${{ secrets.DEPLOYGATE_API_KEY }}" \
+            -F "api_key=${DEPLOYGATE_API_KEY}" \
             -F "message=Debug build v${VERSION_NAME} (${VERSION_CODE})" \
             -F "visibility=private" \
-            https://deploygate.com/api/users/me/apps)
+            "https://deploygate.com/api/users/${DEPLOYGATE_USER}/apps")
           
           echo "Kết quả API: $RESPONSE"
           # Kiểm tra kết quả từ API
