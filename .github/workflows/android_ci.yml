@@ -78,20 +78,33 @@ jobs:
       - name: Deploy APK Debug lên DeployGate
         if: success() # Chỉ chạy nếu các bước trước thành công
         run: |
-          # Cài đặt công cụ DeployGate CLI
-          wget -q -O deploygate https://github.com/deploygate/deploygate-cli/releases/latest/download/deploygate_linux_amd64
+          # Kiểm tra file APK tồn tại
+          if [ ! -f app/build/outputs/apk/dev/debug/app-dev-debug.apk ]; then
+            echo "APK file không tồn tại tại đường dẫn đã chỉ định!"
+            ls -la app/build/outputs/apk/dev/debug/ || echo "Thư mục không tồn tại"
+            exit 1
+          fi
+          
+          # Sử dụng curl thay vì wget để tải DeployGate CLI
+          echo "Đang tải DeployGate CLI..."
+          curl -sL -o deploygate "https://github.com/deploygate/deploygate-cli/releases/download/v1.2.0/deploygate_linux_amd64"
           chmod +x deploygate
           
           # Đọc thông tin phiên bản từ build.gradle.kts
+          echo "Đang đọc thông tin phiên bản..."
           VERSION_CODE=$(grep -o 'versionCode\s*=\s*[0-9]*' app/build.gradle.kts | grep -o '[0-9]*')
           VERSION_NAME=$(grep -o 'versionName\s*=\s*"[^"]*"' app/build.gradle.kts | grep -o '"[^"]*"' | sed 's/"//g')
+          echo "Version: ${VERSION_NAME} (${VERSION_CODE})"
           
           # Đăng nhập và đẩy APK Debug lên DeployGate
+          echo "Đăng nhập vào DeployGate..."
           ./deploygate login --api-key=${{ secrets.DEPLOYGATE_API_KEY }}
+          
+          echo "Đẩy APK lên DeployGate..."
           ./deploygate deploy app/build/outputs/apk/dev/debug/app-dev-debug.apk \
-            --message "Development Debug build v${VERSION_NAME} (code ${VERSION_CODE}) - $(date)" \
-            --visibility private \
-            --distribution-name "Development Testers"
+            --message "Debug build v${VERSION_NAME} (${VERSION_CODE})" \
+            --visibility private
+        shell: bash
 
   # Job thứ hai: Tạo phiên bản release chính thức
   release:
